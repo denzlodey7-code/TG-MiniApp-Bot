@@ -1052,20 +1052,31 @@
             });
         }
 
+        /**
+         * moveDomBlock: перемещает DOM-элемент
+         * direction: -1 = вниз (after next sibling), +1 = вверх (before prev sibling)
+         */
         function moveDomBlock(block, direction) {
             const parent = block.parentElement;
             if (direction === -1) {
+                // Вниз: ставим после следующего элемента
                 const next = block.nextElementSibling;
                 if (next) parent.insertBefore(block, next.nextElementSibling);
             } else {
+                // Вверх: ставим перед предыдущим элементом
                 const prev = block.previousElementSibling;
                 if (prev) parent.insertBefore(block, prev);
             }
         }
 
+        /**
+         * swapInArray: перемещляет элемент в массиве
+         * direction: -1 = вниз (index+1), +1 = вверх (index-1)
+         * Индекс 0 = верх списка. Вниз = увеличение индекса.
+         */
         function swapInArray(arr, item, direction) {
             const curIdx = arr.indexOf(item);
-            const newIdx = curIdx + direction;
+            const newIdx = curIdx - direction;  // -1 → +1 (вниз), +1 → -1 (вверх)
             if (newIdx >= 0 && newIdx < arr.length) {
                 arr.splice(curIdx, 1);
                 arr.splice(newIdx, 0, item);
@@ -1078,6 +1089,9 @@
          * Универсальный обработчик reorder для подпроектов и задач.
          * hold 600ms → reorder-ready → swipe left=вниз, right=вверх
          * hold 2000ms (без свайпа) → onLongPress (действия)
+         *
+         * Ключевое: touchmove на element с passive:false → preventDefault
+         * блокирует скролл Telegram WebView, свайп доходит до обработчика.
          */
         function makeReorderable(opts) {
             const el = opts.element;
@@ -1094,9 +1108,9 @@
             let longPressed = false, cancelled = false;
             let startX = 0, startY = 0, lastSwipeX = 0;
             let mouseStartX = 0, mouseStartY = 0;
-            const SWIPE_THRESHOLD = 40;
+            const SWIPE_THRESHOLD = 35;
 
-            // ─── Touch ───
+            // ─── Touch start (на элементе) ───
             el.addEventListener('touchstart', (e) => {
                 reorderReady = false; isReordering = false;
                 longPressed = false; cancelled = false;
@@ -1124,13 +1138,20 @@
                 }, 2000);
             }, { passive: true });
 
-            const moveHandler = (e) => {
+            // ─── Touch move (на элементе, passive:false → можем preventDefault) ───
+            el.addEventListener('touchmove', (e) => {
                 if (cancelled) return;
                 const touch = e.touches[0];
                 const dx = touch.clientX - startX;
                 const dy = touch.clientY - startY;
 
+                // В режиме reorder — блокируем скролл страницы
+                if (reorderReady || isReordering) {
+                    e.preventDefault();
+                }
+
                 if (isReordering) {
+                    // Повторные свайпы не отпуская палец
                     const swipeDx = touch.clientX - lastSwipeX;
                     if (Math.abs(swipeDx) > SWIPE_THRESHOLD) {
                         const dir = swipeDx < 0 ? -1 : 1;
@@ -1147,6 +1168,7 @@
                 }
 
                 if (reorderReady) {
+                    // Первый свайп — вход в режим reorder
                     if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy)) {
                         isReordering = true;
                         clearTimeout(timer2000);
@@ -1163,6 +1185,7 @@
                     return;
                 }
 
+                // До reorder-ready: отмена при сильном движении
                 if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
                     cancelled = true;
                     clearTimeout(timer600);
@@ -1170,11 +1193,10 @@
                     block.classList.remove('reorder-active');
                     hideSwipeHint();
                 }
-            };
-            window.addEventListener('touchmove', moveHandler, { passive: true });
+            }, { passive: false });
 
+            // ─── Touch end ───
             el.addEventListener('touchend', () => {
-                window.removeEventListener('touchmove', moveHandler);
                 clearTimeout(timer600);
                 clearTimeout(timer2000);
                 block.classList.remove('reorder-active', 'reordering');
@@ -1186,14 +1208,17 @@
                 } else if (!longPressed && !cancelled) {
                     onTap();
                 }
+                isReordering = false;
+                reorderReady = false;
             }, { passive: true });
 
             el.addEventListener('touchcancel', () => {
-                window.removeEventListener('touchmove', moveHandler);
                 clearTimeout(timer600);
                 clearTimeout(timer2000);
                 block.classList.remove('reorder-active', 'reordering');
                 hideSwipeHint();
+                isReordering = false;
+                reorderReady = false;
             }, { passive: true });
 
             // ─── Mouse fallback (desktop) ───
