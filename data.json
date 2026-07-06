@@ -1,0 +1,162 @@
+[
+  {
+    "id": 1,
+    "name": "Разработка Telegram-бота",
+    "description": "Проактивный бот-трекер с Mini App",
+    "subprojects": [
+      {
+        "id": 1,
+        "name": "Фронтенд Mini App",
+        "deadline": "2026-07-05",
+        "tasks": [
+          {
+            "id": 1,
+            "title": "Подключить telegram-web-app.js",
+            "done": false
+          },
+          {
+            "id": 2,
+            "title": "Сверстать главный экран с карточками",
+            "done": false
+          },
+          {
+            "id": 3,
+            "title": "Реализовать прогресс-бары с анимацией",
+            "done": false
+          },
+          {
+            "id": 4,
+            "title": "Создать экран детализации с аккордеонами",
+            "done": false
+          },
+          {
+            "id": 5,
+            "title": "Добавить плавающую кнопку сохранения",
+            "done": false
+          }
+        ],
+        "progress": 0,
+        "total_tasks": 5,
+        "done_tasks": 0
+      },
+      {
+        "id": 2,
+        "name": "Бэкенд бота",
+        "deadline": "2026-07-03",
+        "tasks": [
+          {
+            "id": 6,
+            "title": "Настроить aiogram 3.x с polling",
+            "done": false
+          },
+          {
+            "id": 7,
+            "title": "Создать SQLite-схему",
+            "done": false
+          },
+          {
+            "id": 8,
+            "title": "Реализовать приём web_app_data",
+            "done": false
+          },
+          {
+            "id": 9,
+            "title": "Настроить APScheduler",
+            "done": false
+          }
+        ],
+        "progress": 0,
+        "total_tasks": 4,
+        "done_tasks": 0
+      },
+      {
+        "id": 3,
+        "name": "Настройка Nginx на Beget",
+        "deadline": "2026-07-02",
+        "tasks": [
+          {
+            "id": 10,
+            "title": "Установить Nginx",
+            "done": false
+          },
+          {
+            "id": 11,
+            "title": "Настроить отдачу статики",
+            "done": false
+          },
+          {
+            "id": 12,
+            "title": "Настроить HTTPS через Cloudflare",
+            "done": false
+          }
+        ],
+        "progress": 0,
+        "total_tasks": 3,
+        "done_tasks": 0
+      }
+    ],
+    "progress": 0,
+    "total_subprojects": 3,
+    "done_subprojects": 0
+  },
+  {
+    "id": 2,
+    "name": "Запуск рекламной кампании",
+    "description": "Таргетированная реклама в Telegram Ads",
+    "subprojects": [
+      {
+        "id": 4,
+        "name": "Подготовка креативов",
+        "deadline": "2026-07-10",
+        "tasks": [
+          {
+            "id": 13,
+            "title": "Согласовать концепцию",
+            "done": false
+          },
+          {
+            "id": 14,
+            "title": "Сделать макеты баннеров",
+            "done": false
+          },
+          {
+            "id": 15,
+            "title": "Подготовить тексты объявлений",
+            "done": false
+          }
+        ],
+        "progress": 0,
+        "total_tasks": 3,
+        "done_tasks": 0
+      },
+      {
+        "id": 5,
+        "name": "Настройка Telegram Ads",
+        "deadline": "2026-07-12",
+        "tasks": [
+          {
+            "id": 16,
+            "title": "Создать рекламный кабинет",
+            "done": false
+          },
+          {
+            "id": 17,
+            "title": "Настроить таргетинг",
+            "done": false
+          },
+          {
+            "id": 18,
+            "title": "Запустить кампанию",
+            "done": false
+          }
+        ],
+        "progress": 0,
+        "total_tasks": 3,
+        "done_tasks": 0
+      }
+    ],
+    "progress": 0,
+    "total_subprojects": 2,
+    "done_subprojects": 0
+  }
+]

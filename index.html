@@ -1,0 +1,2057 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mini App — Управление проектами</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+        :root {
+            --accent: var(--tg-theme-button-color, #2481cc);
+            --accent-text: var(--tg-theme-button-text-color, #fff);
+            --bg: var(--tg-theme-bg-color, #f0f2f5);
+            --card: var(--tg-theme-secondary-bg-color, #ffffff);
+            --text: var(--tg-theme-text-color, #1a1a1a);
+            --hint: var(--tg-theme-hint-color, #888);
+            --border: var(--tg-theme-hint-color, #e0e0e0);
+            --track: rgba(128,128,128,0.15);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; padding: 16px 16px 100px;
+        }
+
+        /* ─── Шапка ─── */
+        .header { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+        .header img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
+        .header .greet { flex: 1; }
+        .header .greet h1 { font-size: 20px; font-weight: 700; }
+        .header .greet p { font-size: 13px; color: var(--hint); margin-top: 2px; }
+
+        /* ─── Сводный виджет ─── */
+        .summary {
+            background: var(--card); border-radius: 16px; padding: 18px;
+            margin-bottom: 20px; display: flex; align-items: center; gap: 16px;
+        }
+        .summary .ring {
+            position: relative; width: 64px; height: 64px; flex-shrink: 0;
+        }
+        .summary .ring svg { transform: rotate(-90deg); }
+        .summary .ring .val {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            font-size: 16px; font-weight: 700;
+        }
+        .summary .meta { flex: 1; }
+        .summary .meta .label { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--hint); }
+        .summary .meta .num { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+        /* ─── Вкладки ─── */
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+        .tab-btn {
+            flex: 1; padding: 13px 8px; border: none; border-radius: 14px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            background: var(--card); color: var(--hint); transition: all .2s;
+        }
+        .tab-btn.active { background: var(--accent); color: var(--accent-text); }
+        .tab-btn.holding { opacity: 0.5; transition: opacity .2s; }
+        .tab-btn.holding::after {
+            content: ''; position: absolute; bottom: 0; left: 0; height: 3px;
+            background: var(--accent-text); border-radius: 2px;
+            width: 0; animation: tabFill 1s linear forwards;
+        }
+        .tab-btn { position: relative; overflow: hidden; }
+        @keyframes tabFill { from { width: 0; } to { width: 100%; } }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ─── Карточка проекта ─── */
+        .project-card {
+            background: var(--card); border-radius: 16px; padding: 18px;
+            margin-bottom: 14px; cursor: pointer; transition: transform .15s, border-color .3s;
+            border: 2px solid transparent;
+        }
+        .project-card.pc-none    { border-color: #e74c3c; }
+        .project-card.pc-partial { border-color: #f1c40f; }
+        .project-card.pc-done    { border-color: #2ecc71; }
+        .project-card:active { transform: scale(.98); }
+        .project-card .pc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .project-card .pc-name { font-size: 16px; font-weight: 600; }
+        .project-card .pc-desc { font-size: 13px; color: var(--hint); margin-bottom: 14px; }
+        .project-card .pc-stats { font-size: 12px; color: var(--hint); margin-top: 8px; display: flex; gap: 14px; }
+
+        /* ─── Progress Bar ─── */
+        .progress-track {
+            width: 100%; height: 8px; border-radius: 4px;
+            background: var(--track); overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%; border-radius: 4px;
+            background: var(--accent);
+            transition: width 0.6s cubic-bezier(.4,0,.2,1);
+        }
+        .progress-fill.green { background: #2ecc71; }
+        .progress-fill.yellow { background: #f1c40f; }
+        .progress-fill.red { background: #e74c3c; }
+        .progress-row { display: flex; align-items: center; gap: 10px; }
+        .progress-row .pct { font-size: 13px; font-weight: 700; min-width: 42px; text-align: right; }
+
+        /* ─── Экран детализации ─── */
+        .detail-view { display: none; }
+        .detail-view.active { display: block; }
+        .back-btn {
+            display: flex; align-items: center; gap: 6px;
+            background: none; border: none; color: var(--accent);
+            font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 16px;
+        }
+
+        /* ─── Аккордеон подпроекта ─── */
+        .subproject {
+            background: var(--card); border-radius: 14px; margin-bottom: 10px; overflow: hidden;
+            border: 2px solid transparent; transition: border-color .3s;
+        }
+        .subproject.sp-none   { border-color: #e74c3c; }
+        .subproject.sp-partial { border-color: #f1c40f; }
+        .subproject.sp-done   { border-color: #2ecc71; }
+        .sp-header {
+            padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;
+        }
+        .sp-header .sp-name { flex: 1; font-size: 15px; font-weight: 500; }
+        .sp-header .sp-arrow { font-size: 12px; color: var(--hint); transition: transform .2s; }
+        .sp-header.open .sp-arrow { transform: rotate(180deg); }
+        .sp-bar { width: 60px; }
+        .sp-body { display: none; padding: 0 16px 14px; }
+        .sp-body.open { display: block; }
+
+        /* ─── Чек-бокс задачи ─── */
+        .task-item {
+            display: flex; align-items: center; gap: 12px; padding: 12px 0;
+            border-top: 1px solid var(--border);
+        }
+        .task-item:first-child { border-top: none; }
+        .task-checkbox {
+            width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--hint);
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            flex-shrink: 0; transition: all .2s;
+        }
+        .task-checkbox.checked { background: var(--accent); border-color: var(--accent); }
+        .task-checkbox.checked::after { content: '✓'; color: var(--accent-text); font-size: 15px; font-weight: 700; }
+        .task-text { font-size: 14px; line-height: 1.4; }
+        .task-text.done { text-decoration: line-through; color: var(--hint); }
+
+        /* ─── Форма нового проекта ─── */
+        .section { background: var(--card); border-radius: 16px; padding: 18px; margin-bottom: 16px; }
+        .section label { display: block; font-size: 13px; font-weight: 600; color: var(--hint); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .4px; }
+        .section input[type="text"], .section textarea {
+            width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+            font-size: 15px; font-family: inherit; background: var(--bg); color: var(--text);
+            -webkit-user-select: text; user-select: text;
+        }
+        .section textarea { min-height: 80px; resize: vertical; }
+        .section input:focus, .section textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+        .form-row { margin-bottom: 14px; }
+        .form-row:last-child { margin-bottom: 0; }
+
+        /* ─── Кнопки ─── */
+        .btn {
+            display: block; width: 100%; padding: 16px; border: none; border-radius: 14px;
+            font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 16px; transition: opacity .2s;
+        }
+        .btn:active { opacity: .7; }
+        .btn-primary { background: var(--accent); color: var(--accent-text); }
+
+        /* ─── Action Bar (плавающая кнопка) ─── */
+        .action-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 16px;
+            background: var(--card); box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+            display: none; align-items: center; justify-content: center; gap: 10px; z-index: 100;
+        }
+        .action-bar.visible { display: flex; }
+        .action-bar .save-btn {
+            flex: 1; padding: 14px; border: none; border-radius: 14px;
+            background: var(--accent); color: var(--accent-text);
+            font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+        .action-bar .badge {
+            background: #e74c3c; color: #fff; border-radius: 50%;
+            width: 22px; height: 22px; font-size: 12px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* ─── Тост ─── */
+        .toast {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.82); color: #fff; padding: 12px 24px;
+            border-radius: 12px; font-size: 14px; opacity: 0;
+            transition: opacity .3s; pointer-events: none; z-index: 200;
+        }
+        .toast.show { opacity: 1; }
+
+        .empty { text-align: center; color: var(--hint); padding: 40px 0; font-size: 15px; }
+        .loader { text-align: center; padding: 40px; color: var(--hint); }
+
+        /* ─── Кнопки в детальном экране ─── */
+        .detail-actions {
+            display: flex; gap: 10px; margin-top: 16px; margin-bottom: 16px;
+        }
+        .detail-actions .btn {
+            flex: 1; margin-top: 0; font-size: 14px; padding: 14px 10px;
+        }
+        .btn-outline {
+            background: transparent; color: var(--accent);
+            border: 2px solid var(--accent);
+        }
+        .btn-danger {
+            background: transparent; color: #e74c3c;
+            border: 2px solid #e74c3c;
+        }
+        .btn-danger:active { opacity: .7; }
+
+        /* ─── Форма подпроекта ─── */
+        #subprojectForm { display: none; margin-top: 16px; }
+        #subprojectForm.active { display: block; }
+
+        /* ─── Оверлей действий ─── */
+        #projectActions { display: none; }
+        #projectActions.active { display: block; }
+
+        /* ─── Оверлей действий с подпроектом ─── */
+        #subprojectActions { display: none; }
+        #subprojectActions.active { display: block; }
+
+        /* ─── Номер задачи ─── */
+        .task-num {
+            font-size: 12px; font-weight: 700; color: var(--hint);
+            min-width: 24px; text-align: center; flex-shrink: 0;
+        }
+
+        /* ─── Временная шкала проекта ─── */
+        .timeline {
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 10px; font-size: 11px; color: var(--hint);
+        }
+        .timeline-track {
+            flex: 1; height: 4px; border-radius: 2px;
+            background: var(--track); position: relative; overflow: hidden;
+        }
+        .timeline-fill {
+            height: 100%; border-radius: 2px;
+            background: var(--accent); transition: width .4s ease;
+        }
+        .timeline-fill.urgent { background: #e74c3c; }
+        .timeline-fill.warning { background: #f1c40f; }
+        .timeline-fill.ok { background: #2ecc71; }
+        .timeline-fill.expired { background: #95a5a6; }
+        .timeline-dates {
+            display: flex; justify-content: space-between;
+            font-size: 10px; color: var(--hint); margin-bottom: 8px;
+        }
+        .days-left {
+            font-size: 12px; font-weight: 700; padding: 2px 8px;
+            border-radius: 6px; white-space: nowrap;
+        }
+        .days-left.ok { color: #2ecc71; }
+        .days-left.warning { color: #f1c40f; }
+        .days-left.urgent { color: #e74c3c; }
+        .days-left.expired { color: #95a5a6; }
+
+        /* ─── Поля даты ─── */
+        .date-fields { display: flex; gap: 10px; }
+        .date-fields .form-row { flex: 1; margin-bottom: 0; }
+        .section input[type="date"] {
+            width: 100%; border: 1px solid var(--border); border-radius: 10px;
+            padding: 12px; font-size: 15px; font-family: inherit;
+            background: var(--bg); color: var(--text);
+        }
+
+        /* ─── Reorder: hold + swipe ─── */
+        .reorder-active {
+            opacity: 0.5;
+            transition: opacity .2s;
+        }
+        .reorder-active::after {
+            content: ''; position: absolute; bottom: 0; left: 0; height: 3px;
+            background: var(--accent-text); border-radius: 2px;
+            width: 0; animation: reorderFill 0.6s linear forwards;
+        }
+        @keyframes reorderFill { from { width: 0; } to { width: 100%; } }
+        .reorder-hint {
+            font-size: 11px; color: var(--hint); text-align: center;
+            padding: 4px 8px; opacity: 0; transition: opacity .2s;
+        }
+        .reorder-hint.visible { opacity: 1; }
+        .subproject.reordering {
+            transform: scale(0.97); opacity: 0.7;
+            border-color: var(--accent) !important;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .task-item.reordering {
+            background: var(--track);
+            border-radius: 8px;
+        }
+        .swipe-left-hint {
+            position: fixed; top: 50%; right: 20px; transform: translateY(-50%);
+            background: var(--accent); color: var(--accent-text);
+            padding: 8px 16px; border-radius: 12px; font-size: 13px; font-weight: 600;
+            display: none; z-index: 300; pointer-events: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+        .swipe-left-hint.visible { display: block; }
+        .swipe-right-hint {
+            position: fixed; top: 50%; left: 20px; transform: translateY(-50%);
+            background: var(--accent); color: var(--accent-text);
+            padding: 8px 16px; border-radius: 12px; font-size: 13px; font-weight: 600;
+            display: none; z-index: 300; pointer-events: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+        .swipe-right-hint.visible { display: block; }
+    </style>
+</head>
+<body>
+    <!-- ─── Экран авторизации ─── -->
+    <div id="authScreen" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--bg);z-index:9999;justify-content:center;align-items:center;flex-direction:column;padding:24px;">
+        <div style="text-align:center;margin-bottom:32px;">
+            <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+            <h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">Доступ ограничен</h2>
+            <p style="font-size:14px;color:var(--hint);">Введите пароль для входа</p>
+        </div>
+        <input type="password" id="passwordInput" placeholder="Пароль"
+               style="width:100%;max-width:300px;padding:16px 20px;border:2px solid var(--border);border-radius:14px;font-size:18px;text-align:center;outline:none;background:var(--card);color:var(--text);margin-bottom:16px;"
+               autocomplete="off">
+        <button id="loginBtn" onclick="doLogin()"
+                style="width:100%;max-width:300px;padding:16px;border:none;border-radius:14px;font-size:16px;font-weight:600;background:var(--accent);color:var(--accent-text);cursor:pointer;">
+            Войти
+        </button>
+        <p id="authError" style="color:#e74c3c;font-size:14px;margin-top:16px;display:none;">❌ Неверный пароль</p>
+    </div>
+
+    <!-- ─── Шапка ─── -->
+    <div class="header" id="header">
+        <img id="userAvatar" src="" alt="" style="display:none;">
+        <div class="greet">
+            <h1 id="greetTitle">Загрузка…</h1>
+            <p id="greetSub">Управление проектами</p>
+        </div>
+    </div>
+
+    <!-- ─── Главный экран (Dashboard) ─── -->
+    <div id="dashboard">
+        <!-- Сводный виджет -->
+        <div class="summary" id="summaryWidget">
+            <div class="ring">
+                <svg width="64" height="64">
+                    <circle cx="32" cy="32" r="28" fill="none" stroke="var(--track)" stroke-width="5"/>
+                    <circle id="ringFill" cx="32" cy="32" r="28" fill="none" stroke="var(--accent)" stroke-width="5"
+                            stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round"
+                            style="transition: stroke-dashoffset .6s ease;"/>
+                </svg>
+                <div class="val" id="ringVal">0%</div>
+            </div>
+            <div class="meta">
+                <div class="label">Общий прогресс</div>
+                <div class="num" id="summaryNum">— проектов</div>
+            </div>
+        </div>
+
+        <!-- Вкладки -->
+        <div class="tabs">
+            <button class="tab-btn active" id="tabDash" data-tab="dash">📊 Проекты</button>
+            <button class="tab-btn" id="tabNew" data-tab="new">➕ Новый</button>
+            <button class="tab-btn" id="tabProgress" data-tab="progress">📈 Прогресс</button>
+        </div>
+
+        <!-- Список карточек проектов -->
+        <div id="projectList" class="tab-content active">
+            <div class="loader">Загрузка данных…</div>
+        </div>
+
+        <!-- Форма создания проекта -->
+        <div id="newProjectForm" class="tab-content">
+            <div class="section">
+                <div class="form-row">
+                    <label for="npName">Название проекта</label>
+                    <input type="text" id="npName" placeholder="Например: Запуск лендинга">
+                </div>
+                <div class="form-row">
+                    <label for="npDesc">Описание</label>
+                    <textarea id="npDesc" placeholder="Цель проекта, ключевые задачи, сроки..."></textarea>
+                </div>
+                <div class="form-row">
+                    <label>Тайминг проекта</label>
+                    <div class="date-fields">
+                        <div class="form-row">
+                            <label for="npDateStart" style="font-size:11px;">Начало</label>
+                            <input type="date" id="npDateStart">
+                        </div>
+                        <div class="form-row">
+                            <label for="npDateEnd" style="font-size:11px;">Завершение</label>
+                            <input type="date" id="npDateEnd">
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="createBtn">Создать проект</button>
+            </div>
+        </div>
+
+        <!-- Вкладка: Прогресс проектов -->
+        <div id="progressView" class="tab-content">
+            <div class="loader">Загрузка данных…</div>
+        </div>
+    </div>
+
+    <!-- ─── Экран детализации ─── -->
+    <div id="detailView" class="detail-view">
+        <button class="back-btn" onclick="showDashboard()">‹ Назад к проектам</button>
+        <div class="project-card" id="detailCard"></div>
+        <div id="subprojectList"></div>
+    </div>
+
+    <!-- ─── Оверлей действий с проектом (long press) ─── -->
+    <div id="projectActions" class="detail-view">
+        <button class="back-btn" onclick="hideProjectActions()">‹ Назад</button>
+        <div class="project-card" id="actionsCard"></div>
+
+        <div class="detail-actions">
+            <button class="btn btn-outline" onclick="showSubprojectForm()">➕ Добавить подпроект</button>
+            <button class="btn btn-outline" onclick="showProjectEditForm()">✏️ Редактировать</button>
+            <button class="btn btn-danger" onclick="deleteCurrentProject()">🗑 Удалить проект</button>
+        </div>
+
+        <!-- Форма редактирования проекта -->
+        <div id="projectEditForm" style="display:none; margin-top:16px;">
+            <div class="section">
+                <div class="form-row">
+                    <label for="epName">Название проекта</label>
+                    <input type="text" id="epName" placeholder="Название проекта">
+                </div>
+                <div class="form-row">
+                    <label for="epDesc">Описание</label>
+                    <textarea id="epDesc" placeholder="Описание проекта"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>Тайминг проекта</label>
+                    <div class="date-fields">
+                        <div class="form-row">
+                            <label for="epDateStart" style="font-size:11px;">Начало</label>
+                            <input type="date" id="epDateStart">
+                        </div>
+                        <div class="form-row">
+                            <label for="epDateEnd" style="font-size:11px;">Завершение</label>
+                            <input type="date" id="epDateEnd">
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="saveProjectEditBtn">Сохранить</button>
+                <button class="btn btn-outline" onclick="hideProjectEditForm()" style="margin-top:8px;">Отмена</button>
+            </div>
+        </div>
+
+        <!-- Форма создания подпроекта -->
+        <div id="subprojectForm">
+            <div class="section">
+                <div class="form-row">
+                    <label for="spName">Название подпроекта</label>
+                    <input type="text" id="spName" placeholder="Например: Дизайн лендинга">
+                </div>
+                <button class="btn btn-primary" id="createSubprojectBtn">Создать подпроект</button>
+                <button class="btn btn-outline" onclick="hideSubprojectForm()" style="margin-top:8px;">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Оверлей действий с подпроектом (long press) ─── -->
+    <div id="subprojectActions" class="detail-view">
+        <button class="back-btn" onclick="hideSubprojectActions()">‹ Назад</button>
+        <div class="section">
+            <div class="pc-header" style="margin-bottom:12px;">
+                <div class="pc-name" id="spActionsName"></div>
+            </div>
+            <div class="progress-row" id="spActionsProgress"></div>
+        </div>
+
+        <div class="detail-actions">
+            <button class="btn btn-outline" onclick="showTaskForm()">➕ Добавить задачу</button>
+            <button class="btn btn-outline" onclick="showSubprojectEditForm()">✏️ Редактировать</button>
+            <button class="btn btn-danger" onclick="deleteCurrentSubproject()">🗑 Удалить подпроект</button>
+        </div>
+
+        <!-- Форма редактирования подпроекта -->
+        <div id="subprojectEditForm" style="display:none; margin-top:16px;">
+            <div class="section">
+                <div class="form-row">
+                    <label for="espName">Название подпроекта</label>
+                    <input type="text" id="espName" placeholder="Название подпроекта">
+                </div>
+                <button class="btn btn-primary" id="saveSubprojectEditBtn">Сохранить</button>
+                <button class="btn btn-outline" onclick="hideSubprojectEditForm()" style="margin-top:8px;">Отмена</button>
+            </div>
+        </div>
+
+        <!-- Форма создания задачи -->
+        <div id="taskForm" style="display:none; margin-top:16px;">
+            <div class="section">
+                <div class="form-row">
+                    <label for="taskText">Текст задачи</label>
+                    <input type="text" id="taskText" placeholder="Например: Настроить CI/CD">
+                </div>
+                <button class="btn btn-primary" id="createTaskBtn">Создать задачу</button>
+                <button class="btn btn-outline" onclick="hideTaskForm()" style="margin-top:8px;">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Оверлей действий с задачей (long press) ─── -->
+    <div id="taskActions" class="detail-view">
+        <button class="back-btn" onclick="hideTaskActions()">‹ Назад</button>
+        <div class="section">
+            <div class="pc-header" style="margin-bottom:12px;">
+                <div class="pc-name" id="taskActionsText" style="font-size:15px;"></div>
+            </div>
+        </div>
+
+        <div class="detail-actions">
+            <button class="btn btn-outline" onclick="showTaskEditForm()">✏️ Редактировать</button>
+            <button class="btn btn-danger" onclick="deleteCurrentTask()">🗑 Удалить</button>
+        </div>
+
+        <!-- Форма редактирования задачи -->
+        <div id="taskEditForm" style="display:none; margin-top:16px;">
+            <div class="section">
+                <div class="form-row">
+                    <label for="etText">Текст задачи</label>
+                    <textarea id="etText" placeholder="Текст задачи"></textarea>
+                </div>
+                <button class="btn btn-primary" id="saveTaskEditBtn">Сохранить</button>
+                <button class="btn btn-outline" onclick="hideTaskEditForm()" style="margin-top:8px;">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Action Bar ─── -->
+    <div class="action-bar" id="actionBar">
+        <button class="save-btn" onclick="saveAndSend()">
+            💾 Сохранить и отправить изменения
+        </button>
+        <span class="badge" id="changeBadge" style="display:none;">0</span>
+    </div>
+
+    <!-- ─── Reorder hints ─── -->
+    <div class="swipe-left-hint" id="swipeLeftHint">← Вниз</div>
+    <div class="swipe-right-hint" id="swipeRightHint">↑ Вверх</div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const user = tg.initDataUnsafe?.user;
+        let projectsData = [];
+        let pendingChanges = [];  // [{task_id, done}]
+        let changedCount = 0;
+        let authToken = sessionStorage.getItem('authToken') || null;
+
+        // ─── Авторизация ───
+        function showAuthScreen() {
+            document.getElementById('authScreen').style.display = 'flex';
+            document.getElementById('passwordInput').focus();
+        }
+
+        function hideAuthScreen() {
+            document.getElementById('authScreen').style.display = 'none';
+        }
+
+        async function doLogin() {
+            const pwd = document.getElementById('passwordInput').value.trim();
+            if (!pwd) return;
+            const btn = document.getElementById('loginBtn');
+            btn.textContent = 'Проверка…';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password: pwd})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    authToken = pwd;
+                    sessionStorage.setItem('authToken', pwd);
+                    hideAuthScreen();
+                    loadData();
+                } else {
+                    document.getElementById('authError').style.display = 'block';
+                    btn.textContent = 'Войти';
+                    btn.disabled = false;
+                }
+            } catch(e) {
+                document.getElementById('authError').textContent = 'Ошибка соединения';
+                document.getElementById('authError').style.display = 'block';
+                btn.textContent = 'Войти';
+                btn.disabled = false;
+            }
+        }
+
+        // Enter key in password input
+        document.getElementById('passwordInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') doLogin();
+        });
+
+        // ─── Auth-заголовок для API-запросов ───
+        function authHeaders(extra = {}) {
+            const h = {'Content-Type': 'application/json', ...extra};
+            if (authToken) h['Authorization'] = 'Bearer ' + authToken;
+            return h;
+        }
+
+        // ─── Инициализация шапки ───
+        if (user) {
+            document.getElementById('greetTitle').textContent =
+                `Привет, ${user.first_name || 'друг'}!`;
+            if (user.photo_url) {
+                const img = document.getElementById('userAvatar');
+                img.src = user.photo_url;
+                img.style.display = 'block';
+            }
+        }
+
+        // ─── Утилиты ───
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        function barColor(pct) {
+            if (pct >= 80) return 'green';
+            if (pct >= 40) return '';
+            return '';
+        }
+
+        function ringColor(pct) {
+            if (pct >= 80) return '#2ecc71';
+            if (pct >= 40) return 'var(--accent)';
+            return '#f1c40f';
+        }
+
+        // ─── Расчёт временной шкалы ───
+        function calcTimeline(dateStart, dateEnd) {
+            if (!dateStart || !dateEnd) return null;
+            const start = new Date(dateStart);
+            const end = new Date(dateEnd);
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+
+            const totalMs = end - start;
+            const elapsedMs = now - start;
+            const remainingMs = end - now;
+            const totalDays = Math.ceil(totalMs / 86400000);
+            const remainingDays = Math.ceil(remainingMs / 86400000);
+            const elapsedPct = Math.max(0, Math.min(100, Math.round(elapsedMs / totalMs * 100)));
+
+            let status = 'ok';
+            if (remainingDays < 0) status = 'expired';
+            else if (remainingDays <= 7) status = 'urgent';
+            else if (remainingDays <= 30) status = 'warning';
+
+            return { totalDays, remainingDays, elapsedPct, status,
+                     startStr: start.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+                     endStr: end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) };
+        }
+
+        function fmtDaysLeft(tl) {
+            if (!tl) return '';
+            if (tl.remainingDays < 0) return `⏰ Просрочен ${Math.abs(tl.remainingDays)} дн.`;
+            if (tl.remainingDays === 0) return '⏰ Сегодня дедлайн!';
+            return `⏰ ${tl.remainingDays} дн. до завершения`;
+        }
+
+        function renderTimelineHTML(dateStart, dateEnd) {
+            const tl = calcTimeline(dateStart, dateEnd);
+            if (!tl) return '';
+            return `
+                <div class="timeline-dates">
+                    <span>📅 ${tl.startStr}</span>
+                    <span>🏁 ${tl.endStr}</span>
+                </div>
+                <div class="timeline">
+                    <div class="timeline-track">
+                        <div class="timeline-fill ${tl.status}" style="width:${tl.elapsedPct}%;"></div>
+                    </div>
+                    <span class="days-left ${tl.status}">${fmtDaysLeft(tl)}</span>
+                </div>
+            `;
+        }
+
+        // ─── Загрузка данных ───
+        async function loadData() {
+            try {
+                const res = await fetch('/api/projects', {headers: authHeaders()});
+                projectsData = await res.json();
+                renderDashboard();
+            } catch (e) {
+                document.getElementById('projectList').innerHTML =
+                    '<div class="empty">Ошибка загрузки данных. Попробуйте обновить.</div>';
+            }
+        }
+
+        // ─── Рендер Dashboard ───
+        function renderDashboard() {
+            // Сводный виджет
+            const totalP = projectsData.length;
+            const avgPct = totalP > 0
+                ? Math.round(projectsData.reduce((s, p) => s + p.progress, 0) / totalP)
+                : 0;
+            const ringFill = document.getElementById('ringFill');
+            const circumference = 176;
+            ringFill.setAttribute('stroke-dashoffset', circumference - (avgPct / 100 * circumference));
+            ringFill.setAttribute('stroke', ringColor(avgPct));
+            document.getElementById('ringVal').textContent = avgPct + '%';
+            document.getElementById('summaryNum').textContent =
+                totalP + ' ' + pluralize(totalP, ['проект', 'проекта', 'проектов']);
+
+            // Карточки
+            const container = document.getElementById('projectList');
+            if (projectsData.length === 0) {
+                container.innerHTML = '<div class="empty">Нет проектов. Создайте первый во вкладке «➕ Новый».</div>';
+                return;
+            }
+            container.innerHTML = '';
+            projectsData.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'project-card';
+                card.dataset.pid = p.id;
+
+                // Цветовая обводка по статусу подпроектов
+                if (p.subprojects_total > 0 && p.subprojects_done === p.subprojects_total) card.classList.add('pc-done');
+                else if (p.subprojects_done > 0) card.classList.add('pc-partial');
+                else card.classList.add('pc-none');
+
+                // Обычный клик — переход к деталям
+                // Long press (2.5с) — действия с проектом
+                let pressTimer = null;
+                let longPressed = false;
+                let cardStartX = 0, cardStartY = 0;
+                let cardCancelled = false;
+
+                card.addEventListener('touchstart', (e) => {
+                    longPressed = false;
+                    cardCancelled = false;
+                    const touch = e.touches[0];
+                    cardStartX = touch.clientX;
+                    cardStartY = touch.clientY;
+                    pressTimer = setTimeout(() => {
+                        if (!cardCancelled) {
+                            longPressed = true;
+                            tg.HapticFeedback.notificationOccurred('warning');
+                            showProjectActions(p.id);
+                        }
+                    }, 2000);
+                }, { passive: true });
+
+                // Глобальный move — палец мог уйти с карточки
+                const cardMoveHandler = (e) => {
+                    if (cardCancelled) return;
+                    const touch = e.touches[0];
+                    if (Math.abs(touch.clientX - cardStartX) > 15 || Math.abs(touch.clientY - cardStartY) > 15) {
+                        cardCancelled = true;
+                        clearTimeout(pressTimer);
+                    }
+                };
+                window.addEventListener('touchmove', cardMoveHandler, { passive: true });
+
+                card.addEventListener('touchend', () => {
+                    window.removeEventListener('touchmove', cardMoveHandler);
+                    clearTimeout(pressTimer);
+                    if (!longPressed && !cardCancelled) {
+                        showDetail(p.id);
+                    }
+                }, { passive: true });
+
+                card.addEventListener('touchcancel', () => {
+                    window.removeEventListener('touchmove', cardMoveHandler);
+                    clearTimeout(pressTimer);
+                }, { passive: true });
+
+                // Mouse fallback
+                card.addEventListener('mousedown', (e) => {
+                    longPressed = false;
+                    cardStartX = e.clientX;
+                    cardStartY = e.clientY;
+                    pressTimer = setTimeout(() => {
+                        longPressed = true;
+                        showProjectActions(p.id);
+                    }, 2000);
+                });
+                card.addEventListener('mousemove', (e) => {
+                    if (Math.abs(e.clientX - cardStartX) > 15 || Math.abs(e.clientY - cardStartY) > 15) {
+                        clearTimeout(pressTimer);
+                    }
+                });
+                card.addEventListener('mouseup', () => {
+                    clearTimeout(pressTimer);
+                    if (!longPressed) showDetail(p.id);
+                });
+                card.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+
+                card.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                };
+                card.innerHTML = `
+                    <div class="pc-header">
+                        <div class="pc-name">${esc(p.name)}</div>
+                    </div>
+                    ${p.description ? `<div class="pc-desc">${esc(p.description)}</div>` : ''}
+                    ${renderTimelineHTML(p.date_start, p.date_end)}
+                    <div class="progress-row">
+                        <div class="progress-track" style="flex:1;">
+                            <div class="progress-fill ${barColor(p.progress)}" style="width:${p.progress}%;"></div>
+                        </div>
+                        <div class="pct">${p.progress}%</div>
+                    </div>
+                    <div class="pc-stats">
+                        <span>📁 ${p.subprojects_done}/${p.subprojects_total} подпроектов</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // ─── Экран детализации ───
+        function showDetail(pid) {
+            const p = projectsData.find(x => x.id === pid);
+            if (!p) return;
+
+            document.getElementById('dashboard').style.display = 'none';
+            const dv = document.getElementById('detailView');
+            dv.classList.add('active');
+
+            // Карточка проекта
+            document.getElementById('detailCard').innerHTML = `
+                <div class="pc-header"><div class="pc-name">${esc(p.name)}</div></div>
+                ${p.description ? `<div class="pc-desc">${esc(p.description)}</div>` : ''}
+                ${renderTimelineHTML(p.date_start, p.date_end)}
+                <div class="progress-row">
+                    <div class="progress-track" style="flex:1;">
+                        <div class="progress-fill ${barColor(p.progress)}" style="width:${p.progress}%;"></div>
+                    </div>
+                    <div class="pct">${p.progress}%</div>
+                </div>
+                <div class="pc-stats">
+                    <span>📁 ${p.subprojects_done}/${p.subprojects_total} подпроектов завершено</span>
+                </div>
+            `;
+
+            // Подпроекты (аккордеоны с reorder)
+            const spList = document.getElementById('subprojectList');
+            spList.innerHTML = '';
+            p.subprojects.forEach((sp) => {
+                const block = document.createElement('div');
+                block.className = 'subproject';
+
+                // Цветовая обводка по статусу задач
+                const doneCount = sp.done_count || 0;
+                const totalCount = sp.total_count || 0;
+                if (totalCount > 0 && doneCount === totalCount) block.classList.add('sp-done');
+                else if (doneCount > 0) block.classList.add('sp-partial');
+                else block.classList.add('sp-none');
+
+                const spHeader = document.createElement('div');
+                spHeader.className = 'sp-header';
+                spHeader.innerHTML = `
+                    <div class="sp-name">${esc(sp.name)}</div>
+                    <div class="progress-track sp-bar">
+                        <div class="progress-fill" style="width:${sp.progress}%;"></div>
+                    </div>
+                    <span style="font-size:12px;font-weight:700;min-width:34px;text-align:right;">${sp.progress}%</span>
+                    <span class="sp-arrow">▼</span>
+                `;
+
+                block.appendChild(spHeader);
+
+                // Тело аккордеона — задачи с нумерацией и reorder
+                const spBody = document.createElement('div');
+                spBody.className = 'sp-body';
+                sp.tasks.forEach((t, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'task-item';
+                    item.innerHTML = `
+                        <div class="task-num">${idx + 1}.</div>
+                        <div class="task-checkbox ${t.done ? 'checked' : ''}"
+                             onclick="toggleTask('${t.id}', this, '${sp.id}', '${p.id}')"></div>
+                        <div class="task-text ${t.done ? 'done' : ''}">${esc(t.text)}</div>
+                    `;
+                    // Reorder для задачи: hold 600ms → swipe left/right
+                    makeReorderable({
+                        element: item,
+                        block: item,
+                        items: sp.tasks,
+                        itemRef: t,
+                        onSave: () => saveTaskOrder(p.id, sp.id),
+                        onTap: () => {},
+                        onLongPress: () => showTaskActions(t.id, sp.id, p.id),
+                        updateNumbers: true,
+                    });
+                    spBody.appendChild(item);
+                });
+                block.appendChild(spBody);
+
+                // Reorder для подпроекта: hold 600ms → swipe left/right
+                makeReorderable({
+                    element: spHeader,
+                    block: block,
+                    items: p.subprojects,
+                    itemRef: sp,
+                    onSave: () => saveSubprojectOrder(p.id),
+                    onTap: () => {
+                        spHeader.classList.toggle('open');
+                        spBody.classList.toggle('open');
+                    },
+                    onLongPress: () => showSubprojectActions(p.id, sp.id),
+                    updateNumbers: false,
+                });
+
+                spList.appendChild(block);
+            });
+        }
+
+        // ─── Назад к дашборду ───
+        function showDashboard() {
+            document.getElementById('detailView').classList.remove('active');
+            document.getElementById('dashboard').style.display = 'block';
+            // Пересчитываем прогресс из pendingChanges
+            recalcProgress();
+            renderDashboard();
+        }
+
+        // ─── Тоггл задачи ───
+        function toggleTask(taskId, el, spId, projId) {
+            const newDone = !el.classList.contains('checked');
+            el.classList.toggle('checked');
+            const taskText = el.nextElementSibling;
+            taskText.classList.toggle('done');
+
+            // Записываем изменение
+            const existing = pendingChanges.find(c => c.task_id === taskId);
+            if (existing) {
+                existing.done = newDone;
+            } else {
+                pendingChanges.push({ task_id: taskId, done: newDone });
+            }
+
+            // Обновляем локальные данные
+            const p = projectsData.find(x => x.id === projId);
+            if (p) {
+                const sp = p.subprojects.find(s => s.id === spId);
+                if (sp) {
+                    const t = sp.tasks.find(x => x.id === taskId);
+                    if (t) t.done = newDone;
+                }
+            }
+
+            // Пересчитываем прогресс подпроекта и проекта
+            recalcProgress();
+            updateSubprojectBar(spId, projId);
+            updateProjectBar(projId);
+
+            // Показываем action bar
+            changedCount++;
+            showActionBar();
+
+            tg.HapticFeedback.selectionChanged();
+        }
+
+        // ─── Пересчёт прогресса ───
+        function recalcProgress() {
+            projectsData.forEach(p => {
+                p.subprojects.forEach(sp => {
+                    const total = sp.tasks.length;
+                    const done = sp.tasks.filter(t => t.done).length;
+                    sp.done_count = done;
+                    sp.total_count = total;
+                    sp.progress = total > 0 ? Math.round(done / total * 100) : 0;
+                });
+                const spTotal = p.subprojects.length;
+                const spDone = p.subprojects.filter(s => s.progress === 100).length;
+                p.subprojects_done = spDone;
+                p.subprojects_total = spTotal;
+                p.progress = spTotal > 0
+                    ? Math.round(p.subprojects.reduce((s, sp) => s + sp.progress, 0) / spTotal)
+                    : 0;
+            });
+        }
+
+        function updateSubprojectBar(spId, projId) {
+            const p = projectsData.find(x => x.id === projId);
+            if (!p) return;
+            const sp = p.subprojects.find(s => s.id === spId);
+            if (!sp) return;
+            const block = [...document.querySelectorAll('.subproject')].find(b =>
+                b.querySelector('.sp-name')?.textContent === sp.name
+            );
+            if (block) {
+                const fill = block.querySelector('.sp-bar .progress-fill');
+                const pct = block.querySelector('.sp-header span');
+                if (fill) fill.style.width = sp.progress + '%';
+                if (pct) pct.textContent = sp.progress + '%';
+
+                // Обновляем цветовую обводку
+                block.classList.remove('sp-none', 'sp-partial', 'sp-done');
+                const doneCount = sp.done_count || 0;
+                const totalCount = sp.total_count || 0;
+                if (totalCount > 0 && doneCount === totalCount) block.classList.add('sp-done');
+                else if (doneCount > 0) block.classList.add('sp-partial');
+                else block.classList.add('sp-none');
+            }
+        }
+
+        function updateProjectBar(projId) {
+            const p = projectsData.find(x => x.id === projId);
+            if (!p) return;
+
+            // Обновляем обводку карточки в списке
+            const card = document.querySelector(`.project-card[data-pid="${projId}"]`);
+            if (card) {
+                card.classList.remove('pc-none', 'pc-partial', 'pc-done');
+                if (p.subprojects_total > 0 && p.subprojects_done === p.subprojects_total) card.classList.add('pc-done');
+                else if (p.subprojects_done > 0) card.classList.add('pc-partial');
+                else card.classList.add('pc-none');
+            }
+
+            // Обновляем progress bar в деталях
+            const detailCard = document.getElementById('detailCard');
+            if (detailCard) {
+                const fill = detailCard.querySelector('.progress-fill');
+                const pct = detailCard.querySelector('.pct');
+                if (fill) { fill.style.width = p.progress + '%'; fill.className = 'progress-fill ' + barColor(p.progress); }
+                if (pct) pct.textContent = p.progress + '%';
+            }
+        }
+
+        // ─── Reorder: helper-функции ───
+        let swipeHintTimer = null;
+
+        function showSwipeHint() {
+            const hint = document.getElementById('swipeLeftHint');
+            hint.textContent = '← вниз · вверх →';
+            hint.classList.add('visible');
+        }
+
+        function hideSwipeHint() {
+            document.getElementById('swipeLeftHint').classList.remove('visible');
+        }
+
+        function updateTaskNumbers(container) {
+            const items = container.querySelectorAll('.task-item');
+            items.forEach((item, idx) => {
+                const num = item.querySelector('.task-num');
+                if (num) num.textContent = (idx + 1) + '.';
+            });
+        }
+
+        function moveDomBlock(block, direction) {
+            const parent = block.parentElement;
+            if (direction === -1) {
+                const next = block.nextElementSibling;
+                if (next) parent.insertBefore(block, next.nextElementSibling);
+            } else {
+                const prev = block.previousElementSibling;
+                if (prev) parent.insertBefore(block, prev);
+            }
+        }
+
+        function swapInArray(arr, item, direction) {
+            const curIdx = arr.indexOf(item);
+            const newIdx = curIdx + direction;
+            if (newIdx >= 0 && newIdx < arr.length) {
+                arr.splice(curIdx, 1);
+                arr.splice(newIdx, 0, item);
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Универсальный обработчик reorder для подпроектов и задач.
+         * hold 600ms → reorder-ready → swipe left=вниз, right=вверх
+         * hold 2000ms (без свайпа) → onLongPress (действия)
+         */
+        function makeReorderable(opts) {
+            const el = opts.element;
+            const block = opts.block;
+            const items = opts.items;
+            const itemRef = opts.itemRef;
+            const onSave = opts.onSave;
+            const onTap = opts.onTap;
+            const onLongPress = opts.onLongPress;
+            const updateNumbers = opts.updateNumbers || false;
+
+            let timer600 = null, timer2000 = null, mouseTimer = null;
+            let reorderReady = false, isReordering = false;
+            let longPressed = false, cancelled = false;
+            let startX = 0, startY = 0, lastSwipeX = 0;
+            let mouseStartX = 0, mouseStartY = 0;
+            const SWIPE_THRESHOLD = 40;
+
+            // ─── Touch ───
+            el.addEventListener('touchstart', (e) => {
+                reorderReady = false; isReordering = false;
+                longPressed = false; cancelled = false;
+                const touch = e.touches[0];
+                startX = touch.clientX; startY = touch.clientY;
+                lastSwipeX = touch.clientX;
+
+                timer600 = setTimeout(() => {
+                    if (!cancelled) {
+                        reorderReady = true;
+                        block.classList.add('reorder-active');
+                        tg.HapticFeedback.impactOccurred('light');
+                        showSwipeHint();
+                    }
+                }, 600);
+
+                timer2000 = setTimeout(() => {
+                    if (!cancelled && !isReordering) {
+                        longPressed = true;
+                        block.classList.remove('reorder-active');
+                        hideSwipeHint();
+                        tg.HapticFeedback.notificationOccurred('warning');
+                        onLongPress();
+                    }
+                }, 2000);
+            }, { passive: true });
+
+            const moveHandler = (e) => {
+                if (cancelled) return;
+                const touch = e.touches[0];
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+
+                if (isReordering) {
+                    const swipeDx = touch.clientX - lastSwipeX;
+                    if (Math.abs(swipeDx) > SWIPE_THRESHOLD) {
+                        const dir = swipeDx < 0 ? -1 : 1;
+                        if (swapInArray(items, itemRef, dir)) {
+                            moveDomBlock(block, dir);
+                            if (updateNumbers) updateTaskNumbers(block.parentElement);
+                            tg.HapticFeedback.selectionChanged();
+                        } else {
+                            tg.HapticFeedback.notificationOccurred('error');
+                        }
+                        lastSwipeX = touch.clientX;
+                    }
+                    return;
+                }
+
+                if (reorderReady) {
+                    if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy)) {
+                        isReordering = true;
+                        clearTimeout(timer2000);
+                        block.classList.remove('reorder-active');
+                        block.classList.add('reordering');
+                        lastSwipeX = touch.clientX;
+                        const dir = dx < 0 ? -1 : 1;
+                        if (swapInArray(items, itemRef, dir)) {
+                            moveDomBlock(block, dir);
+                            if (updateNumbers) updateTaskNumbers(block.parentElement);
+                            tg.HapticFeedback.selectionChanged();
+                        }
+                    }
+                    return;
+                }
+
+                if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
+                    cancelled = true;
+                    clearTimeout(timer600);
+                    clearTimeout(timer2000);
+                    block.classList.remove('reorder-active');
+                    hideSwipeHint();
+                }
+            };
+            window.addEventListener('touchmove', moveHandler, { passive: true });
+
+            el.addEventListener('touchend', () => {
+                window.removeEventListener('touchmove', moveHandler);
+                clearTimeout(timer600);
+                clearTimeout(timer2000);
+                block.classList.remove('reorder-active', 'reordering');
+                hideSwipeHint();
+
+                if (isReordering) {
+                    onSave();
+                    tg.HapticFeedback.notificationOccurred('success');
+                } else if (!longPressed && !cancelled) {
+                    onTap();
+                }
+            }, { passive: true });
+
+            el.addEventListener('touchcancel', () => {
+                window.removeEventListener('touchmove', moveHandler);
+                clearTimeout(timer600);
+                clearTimeout(timer2000);
+                block.classList.remove('reorder-active', 'reordering');
+                hideSwipeHint();
+            }, { passive: true });
+
+            // ─── Mouse fallback (desktop) ───
+            el.addEventListener('mousedown', (e) => {
+                longPressed = false;
+                mouseStartX = e.clientX; mouseStartY = e.clientY;
+                mouseTimer = setTimeout(() => {
+                    longPressed = true;
+                    onLongPress();
+                }, 2000);
+            });
+            el.addEventListener('mousemove', (e) => {
+                if (mouseTimer) {
+                    if (Math.abs(e.clientX - mouseStartX) > 15 || Math.abs(e.clientY - mouseStartY) > 15) {
+                        clearTimeout(mouseTimer);
+                        mouseTimer = null;
+                    }
+                }
+            });
+            el.addEventListener('mouseup', () => {
+                if (mouseTimer) { clearTimeout(mouseTimer); mouseTimer = null; }
+                if (!longPressed) onTap();
+            });
+            el.addEventListener('mouseleave', () => {
+                if (mouseTimer) { clearTimeout(mouseTimer); mouseTimer = null; }
+            });
+
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        }
+
+        async function saveSubprojectOrder(projectId) {
+            const p = projectsData.find(x => x.id === projectId);
+            if (!p) return;
+            const ids = p.subprojects.map(sp => sp.id);
+            try {
+                await fetch('/api/reorder-subprojects', {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ project_id: projectId, subproject_ids: ids })
+                });
+                showToast('Порядок подпроектов сохранён');
+            } catch (e) {
+                showToast('⚠️ Ошибка сохранения порядка');
+            }
+        }
+
+        async function saveTaskOrder(projectId, subprojectId) {
+            const p = projectsData.find(x => x.id === projectId);
+            if (!p) return;
+            const sp = p.subprojects.find(s => s.id === subprojectId);
+            if (!sp) return;
+            const ids = sp.tasks.map(t => t.id);
+            try {
+                await fetch('/api/reorder-tasks', {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ subproject_id: subprojectId, task_ids: ids })
+                });
+                showToast('Порядок задач сохранён');
+            } catch (e) {
+                showToast('⚠️ Ошибка сохранения порядка');
+            }
+        }
+
+        // ─── Action Bar ───
+        function showActionBar() {
+            document.getElementById('actionBar').classList.add('visible');
+            const badge = document.getElementById('changeBadge');
+            badge.textContent = changedCount;
+            badge.style.display = changedCount > 0 ? 'flex' : 'none';
+        }
+
+        // ─── Сохранение ───
+        async function saveAndSend() {
+            if (pendingChanges.length === 0) {
+                showToast('Нет изменений для сохранения');
+                return;
+            }
+
+            // 1) Отправляем через tg.sendData() в бота
+            const payload = {
+                type: 'task_updates',
+                changes: pendingChanges,
+                user_name: user ? (user.first_name + ' ' + (user.last_name || '')) : 'Гость',
+                user_id: user ? user.id : null,
+                timestamp: new Date().toISOString()
+            };
+            tg.sendData(JSON.stringify(payload));
+            tg.HapticFeedback.notificationOccurred('success');
+
+            // 2) Также сохраняем через API (двойная синхронизация)
+            try {
+                await fetch('/api/save', {headers: authHeaders(),
+                    method: 'POST',
+                    body: JSON.stringify({ task_updates: pendingChanges })
+                });
+            } catch (e) { /* не критично — бот обновит БД */ }
+
+            pendingChanges = [];
+            changedCount = 0;
+            document.getElementById('actionBar').classList.remove('visible');
+        }
+
+        // ─── Создание проекта ───
+        document.getElementById('createBtn').addEventListener('click', async () => {
+            const name = document.getElementById('npName').value.trim();
+            const desc = document.getElementById('npDesc').value.trim();
+            if (!name) { showToast('Введите название проекта'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!desc) { showToast('Введите описание'); tg.HapticFeedback.notificationOccurred('error'); return; }
+
+            const btn = document.getElementById('createBtn');
+            btn.textContent = 'Создание…';
+            btn.style.opacity = '0.6';
+
+            // 1) Создаём проект через API (надёжно, работает всегда)
+            let apiOk = false;
+            try {
+                const dStart = document.getElementById('npDateStart').value;
+                const dEnd = document.getElementById('npDateEnd').value;
+                const res = await fetch('/api/project', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ name: name, description: desc, date_start: dStart, date_end: dEnd })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    apiOk = true;
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Проект «' + name + '» создан!');
+                } else {
+                    showToast('⚠️ Ошибка: ' + (result.error || 'неизвестно'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети при создании проекта');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            // 2) Пытаемся отправить данные в бота через tg.sendData()
+            //    (работает только если Mini App открыт через inline-кнопку)
+            //    Если не сработает — не критично, проект уже в БД через API
+            if (apiOk) {
+                try {
+                    const payload = {
+                        type: 'new_project',
+                        project_name: name,
+                        description: desc,
+                        user_name: user ? (user.first_name + ' ' + (user.last_name || '')) : 'Гость',
+                        user_id: user ? user.id : null,
+                        timestamp: new Date().toISOString()
+                    };
+                    tg.sendData(JSON.stringify(payload));
+                } catch (e) {
+                    // sendData не сработал (открыт через меню) — не критично
+                }
+
+                // 3) Очищаем форму, обновляем данные, переключаемся на дашборд
+                document.getElementById('npName').value = '';
+                document.getElementById('npDesc').value = '';
+                document.getElementById('npDateStart').value = '';
+                document.getElementById('npDateEnd').value = '';
+                await loadData();
+                switchTab('dash');
+            }
+
+            btn.textContent = 'Создать проект';
+            btn.style.opacity = '1';
+        });
+
+        // ─── Long press: действия с проектом ───
+        let currentActionProjectId = null;
+
+        function showProjectActions(pid) {
+            const p = projectsData.find(x => x.id === pid);
+            if (!p) return;
+            currentActionProjectId = pid;
+
+            // Прячем дашборд, показываем оверлей действий
+            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('detailView').classList.remove('active');
+            document.getElementById('projectActions').classList.add('active');
+            document.getElementById('subprojectForm').classList.remove('active');
+
+            // Карточка проекта
+            document.getElementById('actionsCard').innerHTML = `
+                <div class="pc-header"><div class="pc-name">${esc(p.name)}</div></div>
+                ${p.description ? `<div class="pc-desc">${esc(p.description)}</div>` : ''}
+                ${renderTimelineHTML(p.date_start, p.date_end)}
+                <div class="progress-row">
+                    <div class="progress-track" style="flex:1;">
+                        <div class="progress-fill ${barColor(p.progress)}" style="width:${p.progress}%;"></div>
+                    </div>
+                    <div class="pct">${p.progress}%</div>
+                </div>
+                <div class="pc-stats">
+                    <span>📁 ${p.subprojects_done}/${p.subprojects_total} подпроектов</span>
+                </div>
+            `;
+        }
+
+        function hideProjectActions() {
+            document.getElementById('projectActions').classList.remove('active');
+            document.getElementById('subprojectForm').classList.remove('active');
+            document.getElementById('dashboard').style.display = 'block';
+            currentActionProjectId = null;
+        }
+
+        function showSubprojectForm() {
+            document.getElementById('subprojectForm').classList.add('active');
+            document.getElementById('spName').value = '';
+            document.getElementById('spName').focus();
+        }
+
+        function hideSubprojectForm() {
+            document.getElementById('subprojectForm').classList.remove('active');
+        }
+
+        // ─── Редактирование проекта ───
+        function showProjectEditForm() {
+            const p = projectsData.find(x => x.id === currentActionProjectId);
+            if (!p) return;
+            document.getElementById('epName').value = p.name;
+            document.getElementById('epDesc').value = p.description || '';
+            document.getElementById('epDateStart').value = p.date_start || '';
+            document.getElementById('epDateEnd').value = p.date_end || '';
+            document.getElementById('projectEditForm').style.display = 'block';
+            document.getElementById('epName').focus();
+        }
+
+        function hideProjectEditForm() {
+            document.getElementById('projectEditForm').style.display = 'none';
+        }
+
+        document.getElementById('saveProjectEditBtn').addEventListener('click', async () => {
+            const name = document.getElementById('epName').value.trim();
+            const desc = document.getElementById('epDesc').value.trim();
+            const dStart = document.getElementById('epDateStart').value;
+            const dEnd = document.getElementById('epDateEnd').value;
+            if (!name) { showToast('Введите название'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!currentActionProjectId) return;
+
+            const btn = document.getElementById('saveProjectEditBtn');
+            btn.textContent = 'Сохранение…';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/api/project/' + currentActionProjectId, {headers: authHeaders(),
+                    method: 'PUT',
+                    body: JSON.stringify({ name: name, description: desc, date_start: dStart, date_end: dEnd })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Проект обновлён');
+                    hideProjectEditForm();
+                    hideProjectActions();
+                    await loadData();
+                } else {
+                    showToast('⚠️ ' + (result.error || 'Ошибка'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            btn.textContent = 'Сохранить';
+            btn.style.opacity = '1';
+        });
+
+        async function deleteCurrentProject() {
+            if (!currentActionProjectId) return;
+            const p = projectsData.find(x => x.id === currentActionProjectId);
+            const name = p ? p.name : '';
+            const pid = currentActionProjectId;
+
+            try {
+                const res = await fetch('/api/project/' + pid, { method: 'DELETE', headers: authHeaders() });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('🗑 Проект «' + name + '» удалён');
+                    hideProjectActions();
+                    await loadData();
+                } else {
+                    showToast('⚠️ Ошибка удаления');
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        // ─── Создание подпроекта ───
+        document.getElementById('createSubprojectBtn').addEventListener('click', async () => {
+            const name = document.getElementById('spName').value.trim();
+            if (!name) { showToast('Введите название подпроекта'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!currentActionProjectId) return;
+
+            const btn = document.getElementById('createSubprojectBtn');
+            btn.textContent = 'Создание…';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/api/subproject', {headers: authHeaders(),
+                    method: 'POST',
+                    body: JSON.stringify({ project_id: currentActionProjectId, name: name })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Подпроект «' + name + '» создан');
+                    hideProjectActions();
+                    await loadData();
+                    showDetail(currentActionProjectId);
+                } else {
+                    showToast('⚠️ ' + (result.error || 'Ошибка'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            btn.textContent = 'Создать подпроект';
+            btn.style.opacity = '1';
+        });
+
+        // ─── Long press: действия с подпроектом ───
+        let currentActionProjectIdForSp = null;
+        let currentActionSubprojectId = null;
+
+        function showSubprojectActions(projId, spId) {
+            const p = projectsData.find(x => x.id === projId);
+            if (!p) return;
+            const sp = p.subprojects.find(s => s.id === spId);
+            if (!sp) return;
+            currentActionProjectIdForSp = projId;
+            currentActionSubprojectId = spId;
+
+            // Прячем detailView, показываем оверлей
+            document.getElementById('detailView').classList.remove('active');
+            document.getElementById('projectActions').classList.remove('active');
+            document.getElementById('subprojectActions').classList.add('active');
+            document.getElementById('taskForm').style.display = 'none';
+
+            // Карточка подпроекта
+            document.getElementById('spActionsName').textContent = sp.name;
+            document.getElementById('spActionsProgress').innerHTML = `
+                <div class="progress-track" style="flex:1;">
+                    <div class="progress-fill ${barColor(sp.progress)}" style="width:${sp.progress}%;"></div>
+                </div>
+                <div class="pct">${sp.progress}%</div>
+            `;
+        }
+
+        function hideSubprojectActions() {
+            document.getElementById('subprojectActions').classList.remove('active');
+            document.getElementById('taskForm').style.display = 'none';
+            // Возвращаемся к деталям проекта
+            if (currentActionProjectIdForSp) {
+                showDetail(currentActionProjectIdForSp);
+            }
+            currentActionSubprojectId = null;
+        }
+
+        function showTaskForm() {
+            document.getElementById('taskForm').style.display = 'block';
+            document.getElementById('taskText').value = '';
+            document.getElementById('taskText').focus();
+        }
+
+        function hideTaskForm() {
+            document.getElementById('taskForm').style.display = 'none';
+        }
+
+        // ─── Редактирование подпроекта ───
+        function showSubprojectEditForm() {
+            const p = projectsData.find(x => x.id === currentActionProjectIdForSp);
+            if (!p) return;
+            const sp = p.subprojects.find(s => s.id === currentActionSubprojectId);
+            if (!sp) return;
+            document.getElementById('espName').value = sp.name;
+            document.getElementById('subprojectEditForm').style.display = 'block';
+            document.getElementById('espName').focus();
+        }
+
+        function hideSubprojectEditForm() {
+            document.getElementById('subprojectEditForm').style.display = 'none';
+        }
+
+        document.getElementById('saveSubprojectEditBtn').addEventListener('click', async () => {
+            const name = document.getElementById('espName').value.trim();
+            if (!name) { showToast('Введите название'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!currentActionSubprojectId) return;
+
+            const btn = document.getElementById('saveSubprojectEditBtn');
+            btn.textContent = 'Сохранение…';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/api/subproject/' + currentActionSubprojectId, {headers: authHeaders(),
+                    method: 'PUT',
+                    body: JSON.stringify({ name: name })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Подпроект обновлён');
+                    const projId = currentActionProjectIdForSp;
+                    hideSubprojectEditForm();
+                    hideSubprojectActions();
+                    await loadData();
+                    showDetail(projId);
+                } else {
+                    showToast('⚠️ ' + (result.error || 'Ошибка'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            btn.textContent = 'Сохранить';
+            btn.style.opacity = '1';
+        });
+
+        async function deleteCurrentSubproject() {
+            if (!currentActionSubprojectId) return;
+            const p = projectsData.find(x => x.id === currentActionProjectIdForSp);
+            const sp = p ? p.subprojects.find(s => s.id === currentActionSubprojectId) : null;
+            const name = sp ? sp.name : '';
+            const spId = currentActionSubprojectId;
+            const projId = currentActionProjectIdForSp;
+
+            try {
+                const res = await fetch('/api/subproject/' + spId, { method: 'DELETE', headers: authHeaders() });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('🗑 Подпроект «' + name + '» удалён');
+                    currentActionSubprojectId = null;
+                    await loadData();
+                    showDetail(projId);
+                } else {
+                    showToast('⚠️ Ошибка удаления');
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        // ─── Создание задачи ───
+        document.getElementById('createTaskBtn').addEventListener('click', async () => {
+            const text = document.getElementById('taskText').value.trim();
+            if (!text) { showToast('Введите текст задачи'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!currentActionSubprojectId) return;
+
+            const btn = document.getElementById('createTaskBtn');
+            btn.textContent = 'Создание…';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/api/task', {headers: authHeaders(),
+                    method: 'POST',
+                    body: JSON.stringify({ subproject_id: currentActionSubprojectId, text: text })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Задача добавлена');
+                    const projId = currentActionProjectIdForSp;
+                    hideSubprojectActions();
+                    await loadData();
+                    showDetail(projId);
+                } else {
+                    showToast('⚠️ ' + (result.error || 'Ошибка'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            btn.textContent = 'Создать задачу';
+            btn.style.opacity = '1';
+        });
+
+        // ─── Рендер вкладки Прогресс ───
+        function renderProgress() {
+            const container = document.getElementById('progressView');
+            if (projectsData.length === 0) {
+                container.innerHTML = '<div class="empty">Нет проектов для отображения.</div>';
+                return;
+            }
+
+            let html = '';
+
+            // Сводный блок по всем проектам
+            const totalProjects = projectsData.length;
+            const avgPct = totalProjects > 0
+                ? Math.round(projectsData.reduce((s, p) => s + p.progress, 0) / totalProjects)
+                : 0;
+            const totalSubprojects = projectsData.reduce((s, p) => s + p.subprojects_total, 0);
+            const doneSubprojects = projectsData.reduce((s, p) => s + p.subprojects_done, 0);
+            const totalTasks = projectsData.reduce((s, p) =>
+                s + p.subprojects.reduce((ss, sp) => ss + sp.total_count, 0), 0);
+            const doneTasks = projectsData.reduce((s, p) =>
+                s + p.subprojects.reduce((ss, sp) => ss + sp.done_count, 0), 0);
+
+            html += `<div class="section" style="margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+                    <div class="ring" style="position:relative; width:64px; height:64px; flex-shrink:0;">
+                        <svg width="64" height="64" style="transform:rotate(-90deg);">
+                            <circle cx="32" cy="32" r="28" fill="none" stroke="var(--track)" stroke-width="5"/>
+                            <circle cx="32" cy="32" r="28" fill="none" stroke="${ringColor(avgPct)}" stroke-width="5"
+                                stroke-dasharray="176" stroke-dashoffset="${176 - (avgPct / 100 * 176)}"
+                                stroke-linecap="round" style="transition: stroke-dashoffset .6s ease;"/>
+                        </svg>
+                        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:16px; font-weight:700;">${avgPct}%</div>
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:var(--hint);">Общий прогресс</div>
+                        <div style="font-size:22px; font-weight:700; margin-top:2px;">${totalProjects} ${pluralize(totalProjects, ['проект', 'проекта', 'проектов'])}</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--hint);">
+                    <span>📁 ${doneSubprojects}/${totalSubprojects} подпроектов</span>
+                    <span>✅ ${doneTasks}/${totalTasks} задач</span>
+                </div>
+            </div>`;
+
+            // Каждый проект подробно
+            projectsData.forEach(p => {
+                const projTasksTotal = p.subprojects.reduce((s, sp) => s + sp.total_count, 0);
+                const projTasksDone = p.subprojects.reduce((s, sp) => s + sp.done_count, 0);
+
+                html += `<div class="project-card" style="cursor:default;">
+                    <div class="pc-header">
+                        <div class="pc-name">${esc(p.name)}</div>
+                        <div class="pct" style="font-size:18px; font-weight:700;">${p.progress}%</div>
+                    </div>
+                    ${p.description ? `<div class="pc-desc">${esc(p.description)}</div>` : ''}
+                    ${renderTimelineHTML(p.date_start, p.date_end)}
+                    <div class="progress-row" style="margin-bottom:12px;">
+                        <div class="progress-track" style="flex:1;">
+                            <div class="progress-fill ${barColor(p.progress)}" style="width:${p.progress}%;"></div>
+                        </div>
+                    </div>
+                    <div class="pc-stats">
+                        <span>📁 ${p.subprojects_done}/${p.subprojects_total} подпроектов</span>
+                        <span>✅ ${projTasksDone}/${projTasksTotal} задач</span>
+                    </div>`;
+
+                // Подпроекты с прогрессом
+                if (p.subprojects.length > 0) {
+                    html += `<div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">`;
+                    p.subprojects.forEach(sp => {
+                        html += `<div style="margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <span style="font-size:14px; font-weight:500;">${esc(sp.name)}</span>
+                                <span style="font-size:12px; font-weight:700; color:var(--hint);">${sp.progress}% (${sp.done_count}/${sp.total_count})</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill ${barColor(sp.progress)}" style="width:${sp.progress}%;"></div>
+                            </div>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // ─── Long press: действия с задачей ───
+        let currentActionTaskId = null;
+        let currentActionTaskProjId = null;
+
+        function showTaskActions(taskId, spId, projId) {
+            const p = projectsData.find(x => x.id === projId);
+            if (!p) return;
+            const sp = p.subprojects.find(s => s.id === spId);
+            if (!sp) return;
+            const t = sp.tasks.find(x => x.id === taskId);
+            if (!t) return;
+            currentActionTaskId = taskId;
+            currentActionTaskProjId = projId;
+
+            document.getElementById('detailView').classList.remove('active');
+            document.getElementById('subprojectActions').classList.remove('active');
+            document.getElementById('taskActions').classList.add('active');
+            document.getElementById('taskEditForm').style.display = 'none';
+
+            const mark = t.done ? '✅' : '⬜';
+            document.getElementById('taskActionsText').textContent = mark + ' ' + t.text;
+        }
+
+        function hideTaskActions() {
+            document.getElementById('taskActions').classList.remove('active');
+            document.getElementById('taskEditForm').style.display = 'none';
+            if (currentActionTaskProjId) {
+                showDetail(currentActionTaskProjId);
+            }
+            currentActionTaskId = null;
+        }
+
+        function showTaskEditForm() {
+            const p = projectsData.find(x => x.id === currentActionTaskProjId);
+            if (!p || !currentActionTaskId) return;
+            // Находим задачу
+            let taskText = '';
+            for (const sp of p.subprojects) {
+                const t = sp.tasks.find(x => x.id === currentActionTaskId);
+                if (t) { taskText = t.text; break; }
+            }
+            document.getElementById('etText').value = taskText;
+            document.getElementById('taskEditForm').style.display = 'block';
+            document.getElementById('etText').focus();
+        }
+
+        function hideTaskEditForm() {
+            document.getElementById('taskEditForm').style.display = 'none';
+        }
+
+        async function deleteCurrentTask() {
+            if (!currentActionTaskId) return;
+            const tid = currentActionTaskId;
+            const projId = currentActionTaskProjId;
+            try {
+                const res = await fetch('/api/task/' + tid, { method: 'DELETE', headers: authHeaders() });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('🗑 Задача удалена');
+                    currentActionTaskId = null;
+                    await loadData();
+                    showDetail(projId);
+                } else {
+                    showToast('⚠️ Ошибка удаления');
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        document.getElementById('saveTaskEditBtn').addEventListener('click', async () => {
+            const text = document.getElementById('etText').value.trim();
+            if (!text) { showToast('Введите текст'); tg.HapticFeedback.notificationOccurred('error'); return; }
+            if (!currentActionTaskId) return;
+            const projId = currentActionTaskProjId;
+
+            const btn = document.getElementById('saveTaskEditBtn');
+            btn.textContent = 'Сохранение…';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/api/task/' + currentActionTaskId, {headers: authHeaders(),
+                    method: 'PUT',
+                    body: JSON.stringify({ text: text })
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    showToast('✅ Задача обновлена');
+                    hideTaskEditForm();
+                    hideTaskActions();
+                    await loadData();
+                    showDetail(projId);
+                } else {
+                    showToast('⚠️ ' + (result.error || 'Ошибка'));
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+            } catch (e) {
+                showToast('⚠️ Ошибка сети');
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+
+            btn.textContent = 'Сохранить';
+            btn.style.opacity = '1';
+        });
+
+        // ─── Вкладки: переключение только удержанием 1 секунды ───
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            if (tab === 'dash') {
+                document.getElementById('tabDash').classList.add('active');
+                document.getElementById('projectList').classList.add('active');
+            } else if (tab === 'new') {
+                document.getElementById('tabNew').classList.add('active');
+                document.getElementById('newProjectForm').classList.add('active');
+            } else if (tab === 'progress') {
+                document.getElementById('tabProgress').classList.add('active');
+                document.getElementById('progressView').classList.add('active');
+                renderProgress();
+            }
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+        window.switchTab = switchTab;
+
+        // ─── Long-press логика для вкладок (1 секунда, отмена при скролле) ───
+        (function setupTabLongPress() {
+            const HOLD_MS = 1000;
+            const MOVE_TOLERANCE = 15; // px — порог: меньше = удержание, больше = скролл
+            const buttons = document.querySelectorAll('.tab-btn[data-tab]');
+            let activeHold = null;  // { timer, btn, startX, startY, cancelled }
+
+            // Глобальный трекинг движения — сравниваем с начальной точкой
+            window.addEventListener('touchmove', (e) => {
+                if (!activeHold || activeHold.cancelled) return;
+                const touch = e.touches[0];
+                const dx = Math.abs(touch.clientX - activeHold.startX);
+                const dy = Math.abs(touch.clientY - activeHold.startY);
+                if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+                    activeHold.cancelled = true;
+                    clearTimeout(activeHold.timer);
+                    activeHold.btn.classList.remove('holding');
+                    activeHold = null;
+                }
+            }, { passive: true });
+
+            buttons.forEach(btn => {
+                // ─── Touch ───
+                btn.addEventListener('touchstart', (e) => {
+                    // Сбрасываем предыдущий hold если был
+                    if (activeHold) {
+                        clearTimeout(activeHold.timer);
+                        activeHold.btn.classList.remove('holding');
+                        activeHold = null;
+                    }
+                    const touch = e.touches[0];
+                    activeHold = {
+                        btn: btn,
+                        startX: touch.clientX,
+                        startY: touch.clientY,
+                        cancelled: false,
+                        timer: setTimeout(() => {
+                            if (activeHold && !activeHold.cancelled) {
+                                btn.classList.remove('holding');
+                                tg.HapticFeedback.notificationOccurred('warning');
+                                switchTab(btn.dataset.tab);
+                                activeHold = null;
+                            }
+                        }, HOLD_MS)
+                    };
+                    btn.classList.add('holding');
+                }, { passive: true });
+
+                btn.addEventListener('touchend', () => {
+                    if (activeHold) {
+                        clearTimeout(activeHold.timer);
+                        activeHold.btn.classList.remove('holding');
+                        activeHold = null;
+                    }
+                }, { passive: true });
+
+                btn.addEventListener('touchcancel', () => {
+                    if (activeHold) {
+                        clearTimeout(activeHold.timer);
+                        activeHold.btn.classList.remove('holding');
+                        activeHold = null;
+                    }
+                }, { passive: true });
+
+                // ─── Mouse (desktop) ───
+                let mouseTimer = null;
+                btn.addEventListener('mousedown', (e) => {
+                    btn.classList.add('holding');
+                    mouseTimer = setTimeout(() => {
+                        btn.classList.remove('holding');
+                        switchTab(btn.dataset.tab);
+                    }, HOLD_MS);
+                });
+
+                btn.addEventListener('mousemove', () => {
+                    if (mouseTimer) {
+                        clearTimeout(mouseTimer);
+                        btn.classList.remove('holding');
+                        mouseTimer = null;
+                    }
+                });
+
+                btn.addEventListener('mouseup', () => {
+                    if (mouseTimer) {
+                        clearTimeout(mouseTimer);
+                        btn.classList.remove('holding');
+                        mouseTimer = null;
+                    }
+                });
+                btn.addEventListener('mouseleave', () => {
+                    if (mouseTimer) {
+                        clearTimeout(mouseTimer);
+                        btn.classList.remove('holding');
+                        mouseTimer = null;
+                    }
+                });
+
+                // Блокируем мгновенный клик
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+        })();
+        window.showDashboard = showDashboard;
+        window.showDetail = showDetail;
+        window.toggleTask = toggleTask;
+        window.saveAndSend = saveAndSend;
+        window.showProjectActions = showProjectActions;
+        window.hideProjectActions = hideProjectActions;
+        window.showSubprojectForm = showSubprojectForm;
+        window.hideSubprojectForm = hideSubprojectForm;
+        window.deleteCurrentProject = deleteCurrentProject;
+        window.showProjectEditForm = showProjectEditForm;
+        window.hideProjectEditForm = hideProjectEditForm;
+        window.showSubprojectActions = showSubprojectActions;
+        window.hideSubprojectActions = hideSubprojectActions;
+        window.showTaskForm = showTaskForm;
+        window.hideTaskForm = hideTaskForm;
+        window.showSubprojectEditForm = showSubprojectEditForm;
+        window.hideSubprojectEditForm = hideSubprojectEditForm;
+        window.deleteCurrentSubproject = deleteCurrentSubproject;
+        window.showTaskActions = showTaskActions;
+        window.hideTaskActions = hideTaskActions;
+        window.showTaskEditForm = showTaskEditForm;
+        window.hideTaskEditForm = hideTaskEditForm;
+        window.deleteCurrentTask = deleteCurrentTask;
+        window.saveSubprojectOrder = saveSubprojectOrder;
+        window.saveTaskOrder = saveTaskOrder;
+
+        // ─── Хелпер ───
+        function esc(text) {
+            const d = document.createElement('div'); d.textContent = text || ''; return d.innerHTML;
+        }
+        function pluralize(n, forms) {
+            const n10 = n % 10, n100 = n % 100;
+            if (n10 === 1 && n100 !== 11) return forms[0];
+            if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return forms[1];
+            return forms[2];
+        }
+
+        // ─── Старт ───
+        if (authToken) {
+            // Есть сохранённый токен — загружаем
+            loadData();
+        } else {
+            // Нет токена — показываем экран авторизации
+            showAuthScreen();
+        }
+    </script>
+</body>
+</html>
